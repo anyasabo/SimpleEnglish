@@ -15,7 +15,12 @@ verdict. No tool can guarantee STE compliance.
 Usage:
   python3 ste_lint.py --type procedural file.md
   cat text.md | python3 ste_lint.py --type descriptive -
+  python3 ste_lint.py --type descriptive --locations file.md
   python3 ste_lint.py --self-test
+
+--locations prints one line per hit, `file:line: category: text` (from
+lint_detail()), instead of the JSON counts. With --gate, the exit status is 1
+if there is a hit.
 """
 import json
 import pathlib
@@ -331,7 +336,7 @@ def self_test():
     print("self-test OK:", slop["violations_total"], "violations in slop fixture, 0 in clean")
 
 
-USAGE = "usage: ste_lint.py [--type procedural|descriptive|reply] [--gate] (FILE|-) | --self-test"
+USAGE = "usage: ste_lint.py [--type procedural|descriptive|reply] [--gate] [--locations] (FILE|-) | --self-test"
 
 
 def main():
@@ -342,6 +347,9 @@ def main():
     gate = "--gate" in args
     if gate:
         args.remove("--gate")
+    locations = "--locations" in args
+    if locations:
+        args.remove("--locations")
     text_type = "descriptive"
     if "--type" in args:
         i = args.index("--type")
@@ -362,6 +370,14 @@ def main():
                 text = fh.read()
         except OSError as err:
             sys.exit(str(err))
+    if locations:
+        if text_type == "reply":
+            sys.exit("--locations needs --type procedural or descriptive\n" + USAGE)
+        name = "<stdin>" if src == "-" else src
+        hits = lint_detail(text, text_type)
+        for hit in hits:
+            print("%s:%d: %s: %s" % (name, hit["line"], hit["category"], hit["text"]))
+        return 1 if gate and hits else 0
     report = reader_check(text) if text_type == "reply" else lint(text, text_type)
     print(json.dumps(report, indent=2))
     total = report["visible_total"] if text_type == "reply" else report["violations_total"]
